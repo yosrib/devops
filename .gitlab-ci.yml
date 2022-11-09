@@ -1,0 +1,38 @@
+stages:
+  - package
+  - scan
+  - integration
+
+push docker image:
+  image: docker:stable
+  stage: package
+  services:
+    - docker:18-dind
+  script:
+    - docker build -t ghcr.io/yosrib/apigo:latest -t ghcr.io/yosrib/apigo:$CI_COMMIT_SHORT_SHA .
+    - export CR_PAT=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
+    - echo $CR_PAT | docker login ghcr.io -u ybahri --password-stdin
+    - docker push ghcr.io/yosrib/apigo:latest
+    - docker push ghcr.io/yosrib/apigo:$CI_COMMIT_SHORT_SHA
+
+scanning:
+  image: alpine:3.13
+  stage: scan
+  script:
+    - apk add -u curl
+    - curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/master/contrib/install.sh | sh -s -- -b /usr/local/bin
+    - trivy ghcr.io/yosrib/apigo:latest > cve.txt
+  artifacts:
+    paths: [cve.txt]
+
+integration test:
+  image: docker:stable
+  stage: integration
+  services:
+    - docker:18-dind
+  script:
+    - docker run -d --name myapp ghcr.io/yosrib/apigo:latest
+    - sleep 10s
+    - TEST_RESULT=$(docker run --link myapp lucj/curl -s http://myapp:8000)
+    - echo $TEST_RESULT
+    - $([ "$TEST_RESULT" == "Hello World!" ])
